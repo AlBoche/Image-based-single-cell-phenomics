@@ -1,0 +1,867 @@
+							//// ANALYSIS PIPELINE ////
+				//// Correction + Measure + fragmentation + Perimeters ////
+
+Stack.getDimensions(width, height, channels, slices, frames);
+labels = newArray(channels);
+defaults = newArray(channels);
+for (i=0; i<channels; i++) {
+   labels[i] = "Channels"+i+1;
+    					   }
+  
+Dialog.create("Analysis parameters settings 1/2");
+Dialog.addString("What is the direction pathway?", "C:/Users/Alphonse/Desktop/N2_final/OVCAR3/",30);  // Enter the pathway for taking the labels + sending the acquisition csv.
+Dialog.addCheckbox("Do you have a nucleus channel ?", true);  // Can help to visualize how to do the manual correction for the nucleus labels.
+Dialog.addCheckbox("Focal points analysis?", false); // Check if you want to add a focal point counting analysis.
+Dialog.show();
+Dir=Dialog.getString();
+there_is=Dialog.getCheckbox();
+FP_analysis=Dialog.getCheckbox(); // Will you need the FP analysis.
+Item=newArray();
+items=newArray("1","2","3","4");
+for (i = 0; i < channels; i++) {
+  	Item=Array.concat(Item,items[i]);
+									 }
+Dialog.create("Analysis parameters settings 2/2");
+Dialog.addMessage("Enter the name of your channel(s)");  // enter the name of every channel you have in your stack
+for (i = 0; i < channels; i++) {
+  	Dialog.addString("Channel of", "");					 
+ 									 }
+Dialog.addMessage("What are (in the same order) the channels you want to measure?");	// check in for the channels you want to measure in the analysis.							 
+Dialog.addCheckboxGroup(1,channels,labels,defaults); 	
+
+if (FP_analysis==1) {
+	Dialog.addMessage("Which channels need a FP analysis ?");		// check for the channel you want to be FP analysed. 
+	Dialog.addCheckboxGroup(1,channels,labels,defaults);
+	Dialog.addMessage("FP will count every pixel whose surrounding pixels \nare lower than the PF_scale value");
+	Dialog.addNumber("FP_scale value", "");
+					}
+if (there_is==1) {
+	Dialog.addNumber("Nucleus channel", "");						// Enter the number of your nucleus channel
+				 }
+Dialog.addNumber("Experiment Replicate number", "");				// If you have replicates, enter the number of the current replicate
+Dialog.addMessage("What is the name of the condition you're currently analysing?"); // Be cautious that you have to enter the name that is also the name (caps included) of the folder where your data are. (Example : folder CTRL, then enter: CTRL).
+Dialog.addString("Cell Line name", "");	
+Dialog.addString("Experiment Condition", "");				
+Dialog.show();
+Measure=newArray(); 
+FP_measure=newArray();
+
+for (i = 0; i < channels; i++) {
+	Measure=Array.concat(Measure, Dialog.getCheckbox());
+							   }
+if (FP_analysis==1) {							 
+	for (i = 0; i < channels; i++) {
+		FP_measure=Array.concat(FP_measure, Dialog.getCheckbox());
+								   }
+		FP_scale=Dialog.getNumber();
+					}
+
+Channels=newArray(); 
+for (i = 0; i < channels; i++) {
+	Channels=Array.concat(Channels, Dialog.getString());
+									 }
+if (there_is==1) {
+Channel_nuc=Dialog.getNumber(); // Select the channe with nucleus (optionnal, can replace it with the suitest channel for below)
+				 }
+else {
+Channel_nuc=1;
+	 }
+				         	 
+N_exp=Dialog.getNumber(); // Number of experiment (from 1 to 3 usually)
+line=Dialog.getString();  // which cell line it is
+label=Dialog.getString(); // Which sample are you studying on
+
+
+Title=getTitle(); // Beware to not have your title be "Untitled" as we open untitled ones later on. Could make your real tiff to be closed during the process
+selectWindow(Title);
+run("Duplicate...", "duplicate"); 
+Title2= getTitle();                          // We create a duplicate that will stay at optimal resolution for acquisition
+selectWindow(Title);
+Image.removeScale();						// While we downscale the first one to have a faster processing
+run("Split Channels");
+
+selectWindow("C"+Channel_nuc+"-"+Title);
+Title=getTitle;
+setOption("ScaleConversions", true);
+run("8-bit");
+////// Open the file in order to put actin labels, then the nucleus label in he same ROI Manager 
+open(Dir+""+label+"/actine label.tif");
+selectImage("actine label.tif");
+run("Label image to ROIs", "rm=[RoiManager[size=301, visible=true]]");
+N=roiManager("count");
+
+roiManager("Show All");
+run("From ROI Manager");
+run("Scale...", "x=4 y=4 interpolation=Bilinear average create");
+run("To ROI Manager");
+
+
+A=newArray();
+for (i = 0; i < N; i++) {
+	roiManager("select", i);
+	x=getValue("Area");
+	
+	if (x<300){
+		A=Array.concat(A,i);
+		
+	}
+	
+}
+for (i = 0; i < A.length; i++) {
+		roiManager("select", A[A.length-1-i]);
+		roiManager("delete");}	
+n=roiManager("count");
+selectWindow(Title);
+roiManager("Show All");
+run("From ROI Manager");
+selectImage("actine label.tif");
+close();
+open(Dir+""+label+"/nucleus label.tif");
+selectImage("nucleus label.tif");
+run("Label image to ROIs", "rm=[RoiManager[size=306, visible=true]]");
+roiManager("Show All");
+run("From ROI Manager");
+run("Scale...", "x=4 y=4 interpolation=Bilinear average create");
+run("To ROI Manager");
+close();
+selectWindow(Title);
+roiManager("Show All with labels");
+roiManager("Show All");
+run("From ROI Manager");
+
+run("To ROI Manager");
+T=roiManager("count");
+
+A=newArray();
+for (i = n; i < T; i++) {
+	roiManager("select", i);
+	x=getValue("Area");
+	
+	if (x<500){
+		A=Array.concat(A,i);
+		
+	}
+	
+}
+for (i = 0; i < A.length; i++) {
+		roiManager("select", A[A.length-1-i]);
+		roiManager("delete");}	
+T=roiManager("count");
+t=roiManager("count");
+
+
+					  //// BEGINNING OF LABELS CORRECTION ////
+
+//////Delete all cells without nucleus (and vice-versa) and orderize nucleus with its cells
+roiManager("show none");
+L=newArray();
+L2=newArray();
+L3=newArray();
+roiManager("Select",Array.slice(Array.getSequence(t), n));
+roiManager("Combine");
+roiManager("Add");						  // We create a ROI with every nucleus ROI
+
+for (i=0; i<n; i++) {                     
+roiManager("Select", newArray(i,t));	  // We check for each cell label if we find a nucleus within
+roiManager("AND");
+type=selectionType();
+   if (type==-1) {                        // Register the index of cells without nucleus
+		L=Array.concat(L,i);}
+   else{
+		roiManager("add");}}			  // Add nucleii in the same order as cells
+roiManager("Select", Array.slice(Array.getSequence(t+1), n)); 
+roiManager("Delete");					  // We delete the disorded nucleii plus the ROI we created firsthand.
+
+for (i = 0; i < L.length; i++) {
+	roiManager("select", L[L.length-1-i]);
+	roiManager("delete");}				  // Then we delete all the cells (if there were) found without nucleus
+
+// Manual check up for nucleus integrity
+
+N_c=roiManager("count")/2;
+N_n=roiManager("count");
+for (i = N_c; i < N_n; i++) {
+	roiManager("select", i);
+	roiManager("rename", "nucleus " +i-N_c+1+ "");  // Change the name of each nucleus in order to find them easier for manual check up below
+							}
+
+for (i = N_c; i < N_n; i++) {
+	roiManager("select", i);
+	S=getValue("Solidity");				  // It's possible for nucleus label to overlap in another cells, and it will disturb every measure for the cell
+	if (S<0.8){								// For what we've checked, a solidity below 0.7 for a nucleus is either a poly-nucleii cells, either the previously said overlap during first algorithm
+		print("nucleus " +i-N_c+1+ "");
+		L2=Array.concat(L2,i);
+			  }
+							}
+
+////// In the case some nucleus got some errors while fabricated in the last process, we reduce then increase in pixels nucleus
+////// so it will delete the extra pixels from the real nucleus. Only poly nucleii cells will remain in the error pole. 
+
+if (L2.length!=0) {
+	for (i = 0; i < L2.length; i++) {
+		roiManager("select", L2[L2.length-1-i]);
+		run("Enlarge...", "enlarge=-5");
+		run("Enlarge...", "enlarge=5");
+		roiManager("Add");
+									}
+	for (i = 0; i < L2.length; i++) {
+		roiManager("select", L2[L2.length-1-i]);
+		roiManager("delete");
+								     }
+	roiManager("Select",Array.slice(Array.getSequence(N_n), N_c));
+	roiManager("Combine");
+	roiManager("Add");						  // We create a ROI with every nucleus ROI
+
+	for (i=0; i<N_c; i++) {                     
+	roiManager("Select", newArray(i,N_n));	  // We check for each cell label if we find a nucleus within
+	roiManager("AND");
+	type=selectionType();
+	   if (type==-1) {                        // Register the index of cells without nucleus
+			L3=Array.concat(L3,i);
+	   				 }
+	   else{
+			roiManager("add");			  // Add nucleii in the same order as cells
+		   }
+						  }
+	roiManager("Select", Array.slice(Array.getSequence(N_n+1), N_c)); 
+	roiManager("Delete");					  // We delete the disorded nucleii plus the ROI we created firsthand.
+
+	for (i = 0; i < L3.length; i++) {
+		roiManager("select", L3[L3.length-1-i]);
+		roiManager("delete");}				  // Then we delete all the cells (if there were) found without nucleus
+
+	for (i = N_c; i < N_n; i++) {
+		roiManager("select", i);
+		roiManager("rename", "nucleus " +i-N_c+1+ "");  // Change the name of each nucleus in order to find them easier for manual check up below
+	}
+	print("Second try");
+	for (i = N_c; i < N_n; i++) {
+		roiManager("select", i);
+		S=getValue("Solidity");				  // It's possible for nucleus label to overlap in another cells, and it will disturb every measure for the cell
+		if (S<0.8){								// For what we've checked, a solidity below 0.7 for a nucleus is either a poly-nucleii cells, either the previously said overlap during first algorithm
+			print("nucleus " +i-N_c+1+ "");
+				  }
+								}
+				 }
+roiManager("show all");
+title = "Nucleus Manual Checking";
+msg = "The log prompt will pop up if one or several nucleus aren't properly made from above, \n redo manually nuclei before continuing if necessary.\n \n In case you would need to change any cells labels, add them to the ROI manager last and keep in mind the number of cell \n you've done for the command following just after please. \n \n In case you delete a cell label from the list, please delete its nucleus, or the following steps will not be able to work propeprly";   // If such nucleii are found, their position will be written down in the log. Please correct 
+waitForUser(title, msg);
+
+Dialog.create("Have you modified any cell or nucleus ?");
+Dialog.addCheckbox("I modified a nucleus label", false);
+Dialog.addCheckbox("I modified a cell label", false);
+Dialog.addNumber("Number of cell labels added to the ROI Manager:", 0);
+Dialog.addNumber("Number of cell labels deleted from the ROI Manager:", 0);
+
+Dialog.show();
+nucleus = Dialog.getCheckbox();
+cell = Dialog.getCheckbox();
+number = Dialog.getNumber();
+deleted = Dialog.getNumber();
+
+N_c=N_c-deleted;
+roiManager("show none");
+if (cell!=0 && number >0) {
+	N_temp=roiManager("count");
+	for (i = N_c; i < N_temp-number; i++) {
+		roiManager("select", i);
+		roiManager("add");
+										  }
+	roiManager("Select", Array.slice(Array.getSequence(N_temp-number), N_c));//compteur bas dépend de count aussi
+	roiManager("delete");
+						  }
+N_c=N_c+number;
+N_n=roiManager("count");
+
+if (nucleus!=0 || cell!=0) {
+	L3=newArray();
+	roiManager("Select",Array.slice(Array.getSequence(N_n), N_c));
+	roiManager("Combine");
+	roiManager("Add");						  // We create a ROI with every nucleus ROI
+
+	for (i=0; i<N_c; i++) {                     
+	roiManager("Select", newArray(i,N_n));	  // We check for each cell label if we find a nucleus within
+	roiManager("AND");
+	type=selectionType();
+	   if (type==-1) {                        // Register the index of cells without nucleus
+			L3=Array.concat(L3,i);
+	 				 }  
+	   else{
+			roiManager("add");			  // Add nucleii in the same order as cells
+		   }			 
+						 }
+	roiManager("Select", Array.slice(Array.getSequence(N_n+1), N_c)); 
+	roiManager("Delete");					  // We delete the disorded nucleii plus the ROI we created firsthand.
+
+	for (i = 0; i < L3.length; i++) {
+		roiManager("select", L3[L3.length-1-i]);     // Then we delete all the cells (if there were) found without nucleus
+		roiManager("delete"); 
+									}				
+		
+N_c=roiManager("count")/2;
+N_n=roiManager("count");
+
+	for (i = N_c; i < N_n; i++) {
+		roiManager("select", i);
+		roiManager("rename", "nucleus " +i-N_c+1+ "");  // Change the name of each nucleus in order to find them easier for manual check up below
+								}
+	print("Third try");
+	for (i = N_c; i < N_n; i++) {
+		roiManager("select", i);
+		S=getValue("Solidity");				  // It's possible for nucleus label to overlap in another cells, and it will disturb every measure for the cell
+		if (S<0.8){								// For what we've checked, a solidity below 0.7 for a nucleus is either a poly-nucleii cells, either the previously said overlap during first algorithm
+			print("nucleus " +i-N_c+1+ "");
+				  }
+								}
+	
+							}
+roiManager("show all");							
+						  //// END OF LABELS CORRECTIONS ////
+
+						  //// BEGINNING OF MEASUREMENT ////
+
+////// First output : the list of cells + nucleii with all the range of measurements defined (please check for you "set measurement" parameters before launching this macro).
+N_n=roiManager("count");
+N_c=N_n/2;
+selectWindow(Title2);
+for (i = 0; i < Measure.length; i++) {
+	if (Measure[i]==1) {
+	roiManager("Select", Array.getSequence(N_n));
+	Stack.setChannel(i+1);
+	roiManager("Measure");
+	saveAs("Results", Dir+""+label+"/cell_nucleus "+Channels[i]+" "+label+".csv");
+	run("Clear Results");
+						}
+									 }
+////// For the heatmap/interactive UMAP, we create a PNG image that will be used to save each cells with the 3 channels in it, and get every cell 
+////// classified for cell number, condition and Experiment Replicate number as well.
+
+selectWindow(Title2);
+run("Duplicate...", "duplicate");
+saveAs("PNG", Dir+""+label+"/"+label+".png");
+close();
+open(Dir+""+label+"/"+label+".png");
+selectImage(""+label+".png");
+setBatchMode("hide");
+for (i = 0; i <N_c;i++){
+newImage("Untitled", "RGB black", 1500, 1500, 1);
+selectWindow(""+label+".png");
+roiManager("Select", i);
+run("Copy");
+selectWindow("Untitled");
+run("Paste");
+saveAs("PNG", Dir+""+label+"/Fresque/"+line+"_"+label+""+i+"("+N_exp+").png");
+close();
+}
+setBatchMode("show");
+selectWindow(""+label+".png");
+close();
+
+////// For celltool, we need the binary masks of each cell. Each mask is registered with condition, cell number and Experiment Replicate number, same as above.
+selectWindow(Title);
+setBatchMode("hide");
+for (i = 0; i <N_c;i++){
+newImage("Untitled", "8-bit black", 1500, 1500, 1);
+selectWindow(Title);
+roiManager("Select", i);
+roiManager("Set Fill Color", "white");
+run("Copy");
+selectWindow("Untitled");
+run("Paste");
+run("Add Selection...");
+saveAs("PNG", Dir+""+label+"/Cell/"+line+"_"+label+""+i+"("+N_exp+").png");
+close()
+;
+}
+setBatchMode("show");
+
+////// For celltool, we need the binary masks of each nucleus as well. Each mask is registered with condition, cell number and Experiment Replicate number, same as above.
+setBatchMode("hide");
+for (i = N_c; i <N_n;i++){
+newImage("Untitled", "8-bit black", 500, 500, 1);
+selectWindow(Title);
+roiManager("Select", i);
+roiManager("Set Fill Color", "white");
+run("Copy");
+
+selectWindow("Untitled");
+run("Paste");
+run("Add Selection...");
+saveAs("PNG", Dir+""+label+"/Nucleus/"+line+"_"+label+""+i-N_c+"("+N_exp+").png");
+close()
+;
+}
+setBatchMode("show");
+							  //// END OF MEASUREMENT ////
+									
+////// For clarity purpose, we remove the overlay made from above process.
+
+roiManager("Set Fill Color", "none");
+roiManager("Set Color", "yellow");
+roiManager("deselect");
+
+					 //// BEGINNING OF FRAGMENTATION PROCESS ////
+
+////// Fragmentation of the cell based on nucleus-actin membrane normalization.
+// Care that you need the picture to be SINGLE CHANNEL for this, so either create a duplicate of the image to 
+// make the fragmentation process, either only work on a single channel. Also care that it takes into account
+// scaling, so we remove it for this process.
+
+
+selectWindow(Title);
+Image.removeScale();
+roiManager("show all without labels");
+roiManager("show none");
+
+width = getWidth();
+height = getHeight();
+if(roiManager("count") < 2)
+	exit("The macro needs at least 2 entries in the ROI Manager");
+Dialog.create("Fragmentation nucleus-cell parameters...");
+Dialog.addNumber("Line width:", 0.5,0, 1, "pixels");
+Dialog.addString("Line color:", "cyan");
+Dialog.addNumber("Nucleus Interpolation interval:", 1, 0, 1, "pixels");
+Dialog.addNumber("Cell Interpolation interval:", 10, 0, 1, "pixels");
+Dialog.show();
+strokeWd = Dialog.getNumber();
+strokeCol = Dialog.getString();
+interval = Dialog.getNumber();
+interval2 = Dialog.getNumber();
+count11=0;
+time0 = getTime();
+
+for (z = 0; z < N_c; z++) { // N_c actine labels, n nucleus labels
+	N0=roiManager("count");												
+	roiManager("select", z);
+	run("Interpolate", "interval=interval2");
+	roiManager("update");
+	getSelectionCoordinates(x, y);
+	len1 = x.length;
+	count1 = 0; // count of cells close to the image edges
+	count2 = 0; // count of cells which are inside 2D areas
+	
+	
+	roiManager("select", z+(N_c));
+	run("Interpolate", "interval=interval");
+	roiManager("update");
+	getSelectionCoordinates(u, v);
+	roiManager("select", z+(N_c));                 // we double the number of points for the nucleus, since we want to be sure that we have
+	run("Interpolate", "interval=interval");	  // for each cell pixel the closest to nucleus.
+	roiManager("update");
+	getSelectionCoordinates(u1, v1);
+	u = Array.concat(u,u1);
+	v = Array.concat(v,v1);
+	len2 = u.length;
+
+////// We check for the minimum distance between two opposite points of the actin label.
+////// Then we can obtain a value to start the suitest ratio to use in order to simulate the
+////// normlisation for the area out of range of the first segmentation process.
+
+indice=0;
+distFinal0 = sqrt((x[0]-x[(len1)/2])*(x[0]-x[(len1)/2]) + (y[0]-y[(len1)/2])*(y[0]-y[(len1)/2]));   
+for (d = 1; d < (len1)/2; d++) {
+	dist = sqrt((x[d]-x[d+(len1)/2])*(x[d]-x[d+(len1)/2]) + (y[d]-y[d+(len1)/2])*(y[d]-y[d+(len1)/2]));
+	if(dist < distFinal0){
+		distFinal0 = dist;
+		indice = d;
+		uFinal0 = x[d];
+		vFinal0 = y[d];			
+						  }	
+							   }
+////// For each pixel interpolated from the actin label we check for every nucleus pixel which one is the shortest
+
+for(j=0; j<len1; j++) {
+	if(!pointInsideArea(j)) { 		// check if the point lies inside area, give dist = 0
+		distFinal = sqrt((u[0]-x[j])*(u[0]-x[j]) + (v[0]-y[j])*(v[0]-y[j]));
+		uFinal = u[0];
+		vFinal = v[0];
+		for(i=1; i<len2; i++) {
+			dist = sqrt((u[i]-x[j])*(u[i]-x[j]) + (v[i]-y[j])*(v[i]-y[j]));
+			if(dist < distFinal) {
+				distFinal = dist;
+				uFinal = u[i];
+				vFinal = v[i];
+								 }					
+							   }
+							   
+							   //// POLYGON ROIs ////
+							   
+////// After finding it, we create the line and add it to the ROI manager		
+			makeLine(x[j], y[j], uFinal, vFinal);
+			Roi.setStrokeColor(strokeCol);
+			Roi.setStrokeWidth(strokeWd);
+			roiManager("add");
+			roiManager("Select", roiManager("count")-1);
+			roiManager("Rename", "line "+(j+1));
+							}
+					}
+					
+N=roiManager("count");						// We save the number of ROI manager with all the lines added to it.
+
+////// For each line, we check if all the points of the line are within the actin label.
+////// In case we get a pixel out, it would mean that the segmentation would go outside 
+////// the actin label and we don't want that to happen.
+
+for (j = count2; j < len1; j++) {			// Since we didn't take into account pixels within the nucleus label, we get them out of the loop lenght
+	roiManager("select", N0+len1-1-j);		// We go backward here, since it will not perturbate the indexes of every other lines.
+	run("Interpolate", "interval=1");
+	Roi.getCoordinates(xpoints, ypoints);
+	if (!Asupprimer(z,j)){
+		roiManager("select",  N0+len1-1-j); // We go backward here, since it will not perturbate the indexes of every other lines.
+		roiManager("delete");
+						 }						
+								}
+								
+len3=len1-(N-roiManager("count"))-count2; // The number of lines to interpolate is the number of actin pixels, whose you take out the number of pixel that were within the nucleus label and the ones deleted just above.
+
+////// Every remaining line will get interpolated by 10 points with a same distance between two points.
+////// Then, we'll have each line normalized ten times all around the nucleus until the actin edges.
+for (i = 0; i <len3; i++) {
+	roiManager("select", N_n+(10*z)+i);
+	L=getValue("Length");
+	P=L/10;
+	run("Interpolate", "interval=P");
+	Roi.getCoordinates(xpoints, ypoints);
+	for (j = 0; j < 10; j++) {
+		makePoint(xpoints[j], ypoints[j]);   // points generated from the actin pixel to the nucleus pixel
+		roiManager("add");
+							 }	
+						   }
+						   
+len4=len3+N_n; // Select all the indexes of the RoiManager except for the points generated above. (act as the 'starting list' of the points)
+
+////// For each points, we create a table of all the other points sharing the same position on their lines (every points at position 1, at position 2 etc).
+////// We classify the points by lines order, making us able to create the polygon of all the points, and linking each point with both its line's neighbours point.
+
+for (i = 0; i < 10; i++) {
+	X=newArray(len3);
+	Y=newArray(len3);
+	for (j = 0; j < len3; j++) {
+		roiManager("Select",10*(j+z)+(len4+i));
+		Roi.getCoordinates(xpoints, ypoints);
+		X[j]=xpoints[0];
+		Y[j]=ypoints[0];
+							   }
+makeSelection("Polygon", X,Y);
+roiManager("add");
+						 }	
+
+roiManager("Select", Array.slice(Array.getSequence(roiManager("count")-10), N0)); // We delete everything from N0 (N_n + the ROI generated on previous z) to the last 10 ROI generated.
+roiManager("Delete");
+
+N2=roiManager("count");
+
+roiManager("Select",z+(N_c));  // We will make n/n+1 combination just below, therefore we need to add the nucleus label to follow the generated ROI from above.
+roiManager("add");
+
+////// We create 10 ROI by merging the last 10 ROI with the actin label, to prevent any portion of the generated ROIs to be outside of the cell.
+////// We're going from last ROI to the 10th before last, in order to add the ROIs from nucleus label to the actin label.
+for (i = 0; i < 10; i++) {
+	roiManager("Select", newArray(z,N2-i-1));
+	roiManager("AND");
+	roiManager("add");
+						 }
+////// Then starting from the nucleus label we added before, we create a "XOR" ROI with the ROI just after, in order to create a ROI that will be the N+1 ROI with the
+////// N ROI portion deleted from it. We create then a "headband" ROI.
+for (u =0; u < 10; u++) {
+		roiManager("Select", newArray(N2+u,N2+u+1));
+        roiManager("XOR");
+        type=selectionType();
+        if (type!=-1) {
+   			roiManager("add");
+   					  }
+    				    }
+    				    
+    				    
+    				  		    //// ENLARGED ROI ////
+    				    
+roiManager("Select",z);   // We simply add the label of actin at the end, since the enlarge will start from actin label outerlayer to within
+roiManager("add");
+
+////// This next section is an approximative way to deal with the areas of the actin label that are not covered by any lines.
+////// Round shape cells don't need the following, but in case of other type of cells, it can be helpful.
+
+roiManager("Select",z);
+N3=roiManager("count")-1;
+Ratio=-distFinal0/10;  // Ideal way would be to use /19 (which is faster), however we found that for some kind of cells (dumbbell/nuts shaped for example), it might be better to starts lower in Ratio and increase it step by step
+p=0.1;                 
+special=0;
+for (r=0; r<9;r++){
+run("Enlarge...","enlarge=Ratio");
+roiManager("add");
+				  }
+roiManager("Select",newArray(N3+8,N3+9));
+roiManager("XOR");
+type2=selectionType();	// We check if the two last ROI generated are identicals. If yes, type2==-1 and we increase the ratio until the last ROI and the last before it are differents.
+if (type2==-1) {
+	while (type2==-1 && Ratio<0) {
+	roiManager("Select", Array.slice(Array.getSequence(roiManager("count")), roiManager("count")-10));  // We delete the previous enlarged ROI before starting again with a modified Ratio
+    roiManager("Delete");
+    Ratio=Ratio+p;
+    p+=0.1;
+    
+    roiManager("Select",z);  // Might be a loss of time to select/add z again when we could delete only 9 ROIs above. But weirdly it seems that this way, the code goes 3% faster with calling z again.
+	roiManager("add");
+    roiManager("Select",z);
+    for (r=0; r<9;r++){
+run("Enlarge...","enlarge=Ratio");
+roiManager("add");
+					  }
+roiManager("Select",newArray(N3+8,N3+9));
+roiManager("XOR");
+type2=selectionType();
+								 }	
+	if (Ratio>=0){     //happens for some very thin/small cells where you can't process until a certain point the enlarge feature to reduce shape.
+		roiManager("Select", Array.slice(Array.getSequence(roiManager("count")), roiManager("count")-10));          
+    	roiManager("Delete");
+		roiManager("Select",z);
+		roiManager("add");
+    	roiManager("Select",z);
+    	run("Enlarge...","enlarge=-0.501");                              // 0.5 is probably a FIJI limit, but 0.501 seems to be operationnal.
+    	roiManager("Select",newArray(roiManager("count")-1,roiManager("count")-2));
+		roiManager("XOR");
+		type3=selectionType();
+		while (type3!=-1){
+			roiManager("Select",roiManager("count")-1);
+			Ratio2=-0.501*(special+1);
+			print(Ratio2);
+			run("Enlarge...","enlarge=-0.501");   // We create an enlarge as thin as possible, until the point where we couldn't anymore.
+			roiManager("add");
+			special+=1;
+			roiManager("Select",newArray(roiManager("count")-1,roiManager("count")-2));
+			roiManager("XOR");
+			type3=selectionType();
+			print(type3);
+						 }
+		roiManager("Select",roiManager("count")-1);
+		roiManager("delete");
+		
+		for (i = 0; i < 11-special; i++) {   // Since we eventually can't complete the ROI until a certain point, we'll just use the nucleus label as "filling" for the next process. Since usually the surrounding of nucleus is perfectly filled by lines, it's not really a problem.
+			roiManager("select", z+(N_c));
+			roiManager("add");	
+										 }
+				 }
+			   }				
+
+                           
+////// From the corrections ROIs, we create another headband ROI with the cell label for each of the 10 ROIs.
+////// We check for every last enlarged ROIs previously made if there is any missing areas by checking a "XOR" (exclude what's in common, a reverse AND) with the largest ROI made from the Polygon ROIs.
+for (c = 0; c < 10; c++) {
+
+		roiManager("Select", newArray(N2+10,N3+9-c));
+        roiManager("XOR");
+        type=selectionType();
+            if (type==-1) {     
+		roiManager("Select", N2+10);    
+		roiManager("add");
+         				  } 
+         	else {
+    			roiManager("add");
+    			 }
+    			  		 }
+        
+////// The following part will help filling the missing part of the actin label uncovered by the polygon ROIs.
+////// Firstly we make a merge with the largest polygon ROI and each enlarged ROI label.
+
+N4=roiManager("count");
+for (i = 0; i < 10; i++) {
+	roiManager("Select", newArray(N2+10,N4-10+i));
+	roiManager("OR");
+	roiManager("add");}
+	
+////// Then we create a "XOR" from both largest Polygon ROI and each combination just made.
+////// If there is no correction needed, the largest Polygon ROI will englobe every ROI within the actin label. Therefore making type==-1.
+count=0; // get the number of ROI that will not require any correction.
+for (i = 0; i < 10; i++) {
+	roiManager("Select", newArray(N2+10,N4+i));
+	roiManager("XOR");
+    type=selectionType();
+    if (type==-1) {   // increase count if ROI doesn't need correction.
+    	count+=1;
+         		  }
+    else {
+    	roiManager("add");	
+    	L=getValue("Area");
+    	if (L==0) {				// it might occurs that a "line ROI" is created by the XOR function. In this case area==0, and it's only an artefact. We delete it in this case.
+    		count+=1;
+    		roiManager("Select",roiManager("count")-1);
+    		roiManager("delete");
+    			 }
+    			
+    	 }
+    					  }
+
+
+////// Now we delete every middle step from the last Polygon Rois to the first Enlarged ROI. 			
+roiManager("Select", Array.slice(Array.getSequence(roiManager("count")-10+count), roiManager("count")-(40-count))); // The lower part also depends of the count.
+roiManager("Delete");
+
+								//// CORRECTED ROI ////
+							
+////// In case at least one ROI needs a correction, we will now proceed to create the corrected ROI.
+if (count<10){  // count==10 means all ROI were properly made.
+
+	N6=roiManager("count")-1;
+
+	roiManager("Select", N6-9+count); 		  // We compare n/n+1 again, therefore we add manually the first corrected ROI.
+	roiManager("add");
+	for (i = 0; i < 9-count; i++) { 
+		roiManager("Select",newArray(N6-9+count+i,N6-8+count+i));
+		roiManager("XOR");   				  // We create the headband ROI for every corrected ROI.
+		roiManager("add");
+								  }
+	for (i = 1; i < count+1; i++) {
+		roiManager("Select", N2+10+i); 		 // we then call again all the Polygon ROI which didn't need any correction.
+		roiManager("add");
+								  }
+	N7=roiManager("count")-1;
+	for (i = 0; i < 10-count; i++) {
+		roiManager("Select",newArray(N2+11+count+i,N7-9+i));
+		roiManager("OR");					// Finally we merge the remaining Polygon ROI to the enlarged ROI.
+		roiManager("add");
+								   }
+			}
+  							    //// FINAL STEP ////
+
+////// We finally delete everything from the beginning of the z-loop to the last 10 ROIs.  					
+roiManager("Select", Array.slice(Array.getSequence(roiManager("count")-10), N0));
+roiManager("Delete");
+
+////// In order to further analyse them properly with cell number call, we rename every 10 of the newly created ROI
+////// to the cell number they are refering to.
+
+for (f =roiManager("count")-10; f < roiManager("count"); f++) {
+		roiManager("Select", f);
+		roiManager("rename", "cell"+z);
+							  								  }	
+print(z);  
+	                        }
+	                       
+	                        
+time1 = (getTime()-time0)/1000; // time in secs
+print("Processing time(sec) for segmentation: "+time1);
+////// We go to the first image in order to make the acquisition of all the ROIs.
+selectWindow(Title2);
+for (i = 0; i < Measure.length; i++) {
+	if (Measure[i]==1) {
+		roiManager("Select", Array.getSequence(roiManager("count")));
+		Stack.setChannel(i+1);
+		roiManager("Measure");
+		saveAs("Results", Dir+""+label+"/Fragmentation "+Channels[i]+" "+label+".csv");
+		run("Clear Results");
+						}
+									  }
+if (FP_analysis==1) {
+	selectWindow(Title2);
+	for (i = 0; i < FP_measure.length; i++) {
+	if (FP_measure[i]==1) {									// We check for which channel we checked the FP analysis to be done.
+		Stack.setChannel(i+1);
+		run("Find Maxima...", "prominence=FP_scale output=[Point Selection]");
+		roiManager("add");
+		newImage("FP", "8-bit black", width, height, 1);
+		N=roiManager("count");
+		roiManager("select", N-1);
+		getSelectionCoordinates(x, y);
+     	for (j=0; j<x.length; j++){
+        	setPixel(x[j], y[j], 255);
+        						  }						  
+		for (j = N_n; j < roiManager("count")-1; j++) {		// For every Created ROI, we're looking for the number of maxima to be found (interpreted as single FP).
+			roiManager("Select", j);
+			roiManager("Measure");
+        }
+	
+		selectWindow("FP");
+		close();
+		
+			
+		  // FP_scale means it will count one pixel as FP for everypixel where all the surrounding pixels are below by FP_scale's value or less. Calibrate it to your will by checking your picture beforehand.
+													
+	saveAs("Results", Dir+""+label+"/Focal_Points_Counter "+Channels[i]+" "+label+".csv");
+	run("Clear Results");	}
+					      }
+										    }
+	 				 
+									  
+						 //// END OF FRAGMENTATION PROCESS ////
+						 
+							 //// ISOLATION BEGINNING ////
+						 
+////// The idea is to compair the ratio between (perimeter of all cells - perimeter of cell z)/(perimeter of all cells but without cell z).
+////// The closer you are to 1, the more isolated the cell z is. The closer you are to -1, the less isolated the cell z is.
+						 
+////// For the isolation analysis, we only require the cell actin labels.
+selectWindow(Title);
+roiManager("Show All");
+run("From ROI Manager");
+saveAs("TIFF", Dir+""+label+"/"+label+"_normalisation.tif");
+
+
+roiManager("Select", Array.slice(Array.getSequence(roiManager("count")), N_c));
+roiManager("Delete");
+
+////// We make first a combination of every single ROI of actin in the ROI Manager.
+N=roiManager("count");
+roiManager("Select",Array.getSequence(N));
+roiManager("Combine");
+roiManager("Add");
+////// We then create a ROI made by the combination made earlier, with the depletion of one cell at a time.
+for (i=0; i<N; i++) {
+roiManager("Select", newArray(N,i));
+roiManager("XOR");
+roiManager("Add");
+					}
+selectWindow(Title2);
+roiManager("Select", Array.getSequence(roiManager("count")));
+roiManager("Measure");
+saveAs("Results", Dir+""+label+"/Perimeter "+label+".csv");
+run("Clear Results");
+	                        
+time2 = ((getTime()-time0)/1000); // time in secs
+
+print("Processing time(sec) for isolation: "+time2-time1);
+print("Total processing time(sec): "+time2);
+							   //// ISOLATION END ////
+					
+
+	
+	
+	
+	
+
+		
+function pointInsideArea(a) {
+	for(i=z+(N_c); i<N_n; i++) { // a and i local variables; n, x and y global
+		roiManager("select", i);
+		if(Roi.contains(x[a], y[a])) {
+			count2++; // counting the no. of cells inside 2D areas
+			return true;
+									 }
+			
+								}
+	return false;
+						     }	
+						   
+	
+function Asupprimer(z,j) { 
+// function description
+c=5; //donner une marge pour l'interpolation aux extrémités du label <=> on esquive les défauts de pixelisation inhérent à fiji ici
+roiManager("select", N0+len1-1-j);
+L=getValue("Length");
+if (L<0.1){
+	return false;
+ 		  }
+
+while (c<lengthOf(xpoints)-1){
+
+	roiManager("select", z);
+	if(!Roi.contains(xpoints[c], ypoints[c])) {
+		return false;		
+											  }
+	else {
+		c+=1;
+		 }
+							  }
+return true;
+
+					      }
