@@ -2,7 +2,7 @@ This interactive pipeline is a semi-manual macro on FIJI [1] to extract differen
 In order to use it, the user must prepare a file accordingly:
 
 In the order "Experiment => Cell Line => Condition", user have to prepare three other files "Cell", "Nucleus" and "Fresque". 
-Additionnaly, user will also place three TIF files: the microscopy image, along with the cellular and nuclear segmentation made on Napari [2] with cellpose [3].
+Additionnaly, user will also place three TIF files: the microscopy image, along with the cellular and nuclear segmentation made on Napari with cellpose [2].
 
 <img width="536" alt="image" src="https://github.com/AlBoche/Image-based-single-cell-phenomics/assets/165380486/acb53042-f624-4537-a30c-b9e271389440">
 
@@ -25,7 +25,7 @@ Once it is done (either on FIJI for nucleus, or by restarting a napari segmentat
 - <img width="277" alt="Capture d'écran 2024-04-02 114942" src="https://github.com/AlBoche/Image-based-single-cell-phenomics/assets/165380486/1bb2dbb2-e560-4379-ab26-f88bf1fba2e6">
 
 After checking, an additionnal correction will be made if modifications have been made.
-Will start the regular FIJI measurement for the channels registered at the beginning of the process, followed by the extration of the binarized contours for nucleus and cell in order to use Celltool for a morphological PCA (not included directly on this pipeline). A png save of each cell for an "analysis-ending" stage is also made, in order to visualize cell directly on the UMAP single cell clustering obtained at the end of the analysis. (See example below).
+Will start the regular FIJI measurement for the channels registered at the beginning of the process, followed by the extration of the binarized contours for nucleus and cell in order to use Celltool [3] for a morphological PCA (not included directly on this pipeline). A png save of each cell for an "analysis-ending" stage is also made, in order to visualize cell directly on the UMAP single cell clustering obtained at the end of the analysis. (See example below).
 
 https://github.com/AlBoche/Image-based-single-cell-phenomics/assets/165380486/19b1efdf-4dc7-40b3-a0de-e0e24a24089d
 
@@ -38,3 +38,9 @@ Finally the fragmentation will normalize the distance from nucleus to cell membr
 <img width="755" alt="image" src="https://github.com/AlBoche/Image-based-single-cell-phenomics/assets/165380486/c9c00a06-bb9f-44f3-85b4-84536af59bca">
 
 Hope this will help you for your analysis !
+
+[1]Schindelin, J., Arganda-Carreras, I., Frise, E., Kaynig, V., Longair, M., Pietzsch, T., Preibisch, S., Rueden, C., Saalfeld, S., Schmid, B., et al. (2012). Fiji: an open-source platform for biological-image analysis. Nat. Methods 9, 676–682. 10.1038/nmeth.2019
+
+[2]Pachitariu, M., and Stringer, C. (2022). Cellpose 2.0: how to train your own model. Nat. Methods 19, 1634–1641. 10.1038/s41592-022-01663-4
+
+[3]Pincus, Z., and Theriot, J.A. (2007). Comparison of quantitative methods for cell-shape analysis. J. Microsc. 227, 140–156. 10.1111/j.1365-2818.2007.01799.x
